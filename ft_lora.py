@@ -1,0 +1,120 @@
+#!/usr/bin/env python3
+
+"""LoRA fine-tuning
+
+OOP-style; no from_pretrained in user code.
+
+Requirements:
+  torch
+  peft
+  transformers
+"""
+
+from pathlib import Path
+
+import torch
+from peft import LoraConfig, get_peft_model, PeftModel
+from transformers import AutoModelForCausalLM, AutoTokenizer, Trainer, TrainingArguments
+
+
+class LoraModel:
+    """A causal LM with built-in LoRA training & chat, hiding from_pretrained."""
+
+    def __init__(self, model_id: str, device: str = "mps"):
+        self.model_id = model_id
+        self.tokenizer = AutoTokenizer.from_pretrained(model_id)
+        self.tokenizer.pad_token = self.tokenizer.eos_token
+        self.base = AutoModelForCausalLM.from_pretrained(model_id, device_map=device, torch_dtype="auto")
+        self.peft_model = None
+        self.model = self.base  # active model (base or peft)
+
+    def __repr__(self) -> str:
+        n = sum(p.numel() for p in self.model.parameters())
+        return f"LoraModel('{self.model_id}', {n/1e9:.1f}B params, lora={'yes' if self._has_lora() else 'no'})"
+
+    # -- LoRA ---------------------------------------------------------------
+
+    def enable_lora(self, r: int = 8, alpha: int = 16, dropout: float = 0.1):
+        if self.peft_model is None:
+            cfg = LoraConfig(r=r, lora_alpha=alpha, lora_dropout=dropout, bias="none",
+                            task_type="CAUSAL_LM")
+            self.peft_model = get_peft_model(self.base, cfg)
+        self.model = self.peft_model
+        # self.peft_model.print_trainable_parameters()
+
+    def disable_lora(self):
+        self.model = self.base
+
+    def _has_lora(self) -> bool:
+        return self.peft_model is not None
+
+    # -- Chat ----------------------------------------------------------------
+
+    def _format(self, prompt: str, add_gen: bool = True) -> str:
+        """Render a single-turn conversation to a string in Qwen chat format.
+
+        Adds the `<|im_start|>system...<|im_end|>` prefix plus the user message.
+        `add_generation_prompt` controls whether `<|im_start|>assistant\\n` is appended:
+        - chat (inference): add_gen=True — the model needs the assistant marker to start generating
+        - train: add_gen=False — the training text already contains the full assistant reply
+        """
+        return self.tokenizer.apply_chat_template(
+            [{"role": "user", "content": prompt}],
+            tokenize=False, add_generation_prompt=add_gen,
+        )
+
+    def chat(self, prompt: str, max_tokens: int = 80) -> str:
+        """Format prompt via chat template, generate response, strip template noise.
+
+        Returns only the assistant's reply text.
+        """
+        self.model.eval()
+        fmt = self._format(prompt)
+        inp = self.tokenizer(fmt, return_tensors="pt").to(self.model.device)
+        with torch.no_grad():
+            out = self.model.generate(**inp, max_new_tokens=max_tokens,
+                                      temperature=0.7, do_sample=True,
+                                      pad_token_id=self.tokenizer.pad_token_id)
+        return self.tokenizer.decode(out[0], skip_special_tokens=True).split("assistant\n")[-1].strip()
+
+    # -- Training -----------------------------------------------------------
+
+    def train(self, conversations: list[dict], epochs: int = 30, lr: float = 3e-4):
+        """Fine-tune with LoRA on ShareGPT-format conversations.
+
+        Pipeline: render each convo via chat template → tokenize with pad+trunc →
+        mask padding positions in labels → Trainer.
+        Auto-enables LoRA if not already active.
+        """
+        if not self._has_lora():
+            self.enable_lora()
+        self.model.config.use_cache = False
+
+        texts = [self._format(Path(c).read_text() if isinstance(c, Path) else self._render(c), add_gen=False)
+                for c in conversations]
+        tok = self.tokenizer(texts, truncation=True, padding="max_length", max_length=256)
+        dataset = [{"input_ids": i, "attention_mask": m,
+               "labels": [-100 if m == 0 else l for l, m in zip(i, m)]}
+              for i, m in zip(tok["input_ids"], tok["attention_mask"])]
+
+        Trainer(model=self.model, args=TrainingArguments(
+            output_dir="./lora-out", learning_rate=lr, per_device_train_batch_size=4,
+            num_train_epochs=epochs, logging_steps=5,
+            save_strategy="no", report_to="none",
+        ), train_dataset=dataset, processing_class=self.tokenizer).train()
+
+        self.model.config.use_cache = True
+
+    def _render(self, conv: dict) -> str:
+        return self.tokenizer.apply_chat_template(
+            conv["messages"], tokenize=False, add_generation_prompt=False)
+
+    # -- Persistence --------------------------------------------------------
+
+    def save(self, path: str):
+        self.model.save_pretrained(path)
+        self.tokenizer.save_pretrained(path)
+
+    def load_lora(self, path: str):
+        self.peft_model = PeftModel.from_pretrained(self.base, path)
+        self.model = self.peft_model
