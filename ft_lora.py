@@ -82,8 +82,8 @@ class LoraModel:
     def train(self, conversations: list[dict], epochs: int = 30, lr: float = 3e-4):
         """Fine-tune with LoRA on ShareGPT-format conversations.
 
-        Pipeline: render each convo via chat template → tokenize with pad+trunc →
-        mask padding positions in labels → Trainer.
+        Pipeline: render each convo via chat template -> tokenize with pad+trunc ->
+        mask padding positions in labels -> Trainer.
         Auto-enables LoRA if not already active.
         """
         if not self._has_lora():
@@ -94,8 +94,8 @@ class LoraModel:
                 for c in conversations]
         tok = self.tokenizer(texts, truncation=True, padding="max_length", max_length=256)
         dataset = [{"input_ids": i, "attention_mask": m,
-               "labels": [-100 if m == 0 else l for l, m in zip(i, m)]}
-              for i, m in zip(tok["input_ids"], tok["attention_mask"])]
+               "labels": [-100 if m == 0 else i for i, m in zip(ids, ms)]}
+              for ids, ms in zip(tok["input_ids"], tok["attention_mask"])]
 
         Trainer(model=self.model, args=TrainingArguments(
             output_dir="./lora-out", learning_rate=lr, per_device_train_batch_size=4,
