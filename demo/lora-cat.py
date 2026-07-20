@@ -22,7 +22,7 @@ TEST_PROMPTS = [
 def train(MODEL_ID, DATA_PATH, SAVE_PATH, save=True):
     data = json.loads(DATA_PATH.read_text())
 
-    m = LoraModel(MODEL_ID)
+    m = LoraModel(model_id=MODEL_ID, name='cat')
 
     print("\n=== BEFORE fine-tuning ===")
     for p in TEST_PROMPTS:
