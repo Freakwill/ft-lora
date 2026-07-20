@@ -13,22 +13,22 @@ Use:
 
     TEST_PROMPTS = [
         ...
-    ]
+    ]  # list of prompts
 
     data = ... # in ShearGPT format
 
     m = LoraModel(MODEL_ID)
 
-    print("\n=== BEFORE fine-tuning ===")
+    print("=== BEFORE fine-tuning ===")
     for p in TEST_PROMPTS:
         print(f"  input:  {p}")
         print(f"  output: {m.chat(p)}\n")
 
     m.enable_lora()
     m.train(data, epochs=30)
-    m.save(str(SAVE_PATH))
+    m.save()
 
-    print("\n=== AFTER fine-tuning ===")
+    print("=== AFTER fine-tuning ===")
     for p in TEST_PROMPTS:
         print(f"  input:  {p}")
         print(f"  output: {m.chat(p)}\n")
@@ -108,12 +108,17 @@ class LoraModel:
 
     # -- Training -----------------------------------------------------------
 
-    def train(self, conversations: list[dict], epochs: int = 30, lr: float = 3e-4):
+    def train(self, conversations: list[dict], epochs: int = 30, lr: float = 3e-4,
+              output: str | None = None):
         """Fine-tune with LoRA on ShareGPT-format conversations.
 
         Pipeline: render each convo via chat template -> tokenize with pad+trunc ->
         mask padding positions in labels -> Trainer.
         Auto-enables LoRA if not already active.
+
+        Args:
+            output: if set, save training logs/checkpoints to ``./lora-output-{name}``.
+                    None (default) produces no output files.
         """
         if not self.lora_enabled:
             self.enable_lora()
@@ -125,10 +130,12 @@ class LoraModel:
                "labels": [-100 if m == 0 else i for i, m in zip(inds, ms)]}
               for inds, ms in zip(tok["input_ids"], tok["attention_mask"])]
 
+        out_dir = f"./lora-output-{self.name}" if output else "./.lora-tmp"
         Trainer(model=self.model, args=TrainingArguments(
-            output_dir="./lora-out", learning_rate=lr, per_device_train_batch_size=4,
+            output_dir=out_dir, learning_rate=lr, per_device_train_batch_size=4,
             num_train_epochs=epochs, logging_steps=5,
-            save_strategy="no", report_to="none",
+            save_strategy="no" if output is None else "epoch",
+            report_to="none",
         ), train_dataset=dataset, processing_class=self.tokenizer).train()
 
         self.model.config.use_cache = True
@@ -140,12 +147,12 @@ class LoraModel:
     # -- Persistence --------------------------------------------------------
 
     def save(self, path: str | None = None):
-        path = f"{self.name}-lora" if path is None else path
+        path = f"lora-{self.name}" if path is None else path
         self.model.save_pretrained(path)
         self.tokenizer.save_pretrained(path)
 
     def load(self, path: str | None = None):
-        path = f"{self.name}-lora" if path is None else path
+        path = f"lora-{self.name}" if path is None else path
         self.peft_model = PeftModel.from_pretrained(self.base, path)
         self.enable_lora()
 
