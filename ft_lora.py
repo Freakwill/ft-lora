@@ -5,9 +5,33 @@
 OOP-style; no from_pretrained in user code.
 
 Requirements:
-  torch
-  peft
-  transformers
+    torch
+    peft
+    transformers
+
+Use:
+
+    TEST_PROMPTS = [
+        ...
+    ]
+
+    data = ... # in ShearGPT format
+
+    m = LoraModel(MODEL_ID)
+
+    print("\n=== BEFORE fine-tuning ===")
+    for p in TEST_PROMPTS:
+        print(f"  input:  {p}")
+        print(f"  output: {m.chat(p)}\n")
+
+    m.enable_lora()
+    m.train(data, epochs=30)
+    m.save(str(SAVE_PATH))
+
+    print("\n=== AFTER fine-tuning ===")
+    for p in TEST_PROMPTS:
+        print(f"  input:  {p}")
+        print(f"  output: {m.chat(p)}\n")
 """
 
 from pathlib import Path
@@ -18,7 +42,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer, Trainer, TrainingA
 
 
 class LoraModel:
-    """A causal LM with built-in LoRA training & chat, hiding from_pretrained."""
+    """A causal LM with built-in LoRA training & chat, hiding `from_pretrained`."""
 
     def __init__(self, model_id: str, device: str = "mps"):
         self.model_id = model_id
@@ -27,6 +51,7 @@ class LoraModel:
         self.base = AutoModelForCausalLM.from_pretrained(model_id, device_map=device, torch_dtype="auto")
         self.peft_model = None
         self.model = self.base  # active model (base or peft)
+        self._lora_enabled = False
 
     def __repr__(self) -> str:
         n = sum(p.numel() for p in self.model.parameters())
@@ -40,13 +65,16 @@ class LoraModel:
                             task_type="CAUSAL_LM")
             self.peft_model = get_peft_model(self.base, cfg)
         self.model = self.peft_model
+        self._lora_enabled = True
         # self.peft_model.print_trainable_parameters()
 
     def disable_lora(self):
         self.model = self.base
+        self._lora_enabled = False
 
-    def _has_lora(self) -> bool:
-        return self.peft_model is not None
+    @property
+    def lora_enabled(self):
+        return self._lora_enabled
 
     # -- Chat ----------------------------------------------------------------
 
@@ -86,7 +114,7 @@ class LoraModel:
         mask padding positions in labels -> Trainer.
         Auto-enables LoRA if not already active.
         """
-        if not self._has_lora():
+        if not self.lora_enabled:
             self.enable_lora()
         self.model.config.use_cache = False
 
@@ -117,4 +145,5 @@ class LoraModel:
 
     def load_lora(self, path: str):
         self.peft_model = PeftModel.from_pretrained(self.base, path)
-        self.model = self.peft_model
+        self.enable_lora()
+
