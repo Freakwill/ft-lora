@@ -44,8 +44,9 @@ from transformers import AutoModelForCausalLM, AutoTokenizer, Trainer, TrainingA
 class LoraModel:
     """A causal LM with built-in LoRA training & chat, hiding `from_pretrained`."""
 
-    def __init__(self, model_id: str, device: str = "mps"):
+    def __init__(self, model_id: str, name: str = "assistant", device: str = "mps"):
         self.model_id = model_id
+        self.name = name
         self.tokenizer = AutoTokenizer.from_pretrained(model_id)
         self.tokenizer.pad_token = self.tokenizer.eos_token
         self.base = AutoModelForCausalLM.from_pretrained(model_id, device_map=device, torch_dtype="auto")
@@ -118,12 +119,11 @@ class LoraModel:
             self.enable_lora()
         self.model.config.use_cache = False
 
-        texts = [self._format(Path(c).read_text() if isinstance(c, Path) else self._render(c), add_gen=False)
-                for c in conversations]
+        texts = [self._format(self._render(c), add_gen=False) for c in conversations]
         tok = self.tokenizer(texts, truncation=True, padding="max_length", max_length=256)
-        dataset = [{"input_ids": i, "attention_mask": m,
-               "labels": [-100 if m == 0 else i for i, m in zip(ids, ms)]}
-              for ids, ms in zip(tok["input_ids"], tok["attention_mask"])]
+        dataset = [{"input_ids": inds, "attention_mask": ms,
+               "labels": [-100 if m == 0 else i for i, m in zip(inds, ms)]}
+              for inds, ms in zip(tok["input_ids"], tok["attention_mask"])]
 
         Trainer(model=self.model, args=TrainingArguments(
             output_dir="./lora-out", learning_rate=lr, per_device_train_batch_size=4,
@@ -139,11 +139,13 @@ class LoraModel:
 
     # -- Persistence --------------------------------------------------------
 
-    def save(self, path: str):
+    def save(self, path: str | None = None):
+        path = f"{self.name}-lora" if path is None else path
         self.model.save_pretrained(path)
         self.tokenizer.save_pretrained(path)
 
-    def load_lora(self, path: str):
+    def load(self, path: str | None = None):
+        path = f"{self.name}-lora" if path is None else path
         self.peft_model = PeftModel.from_pretrained(self.base, path)
         self.enable_lora()
 
