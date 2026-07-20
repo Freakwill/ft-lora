@@ -109,7 +109,7 @@ class LoraModel:
     # -- Training -----------------------------------------------------------
 
     def train(self, conversations: list[dict], epochs: int = 30, lr: float = 3e-4,
-              output: str | None = None):
+              output: bool = True):
         """Fine-tune with LoRA on ShareGPT-format conversations.
 
         Pipeline: render each convo via chat template -> tokenize with pad+trunc ->
@@ -118,7 +118,7 @@ class LoraModel:
 
         Args:
             output: if set, save training logs/checkpoints to ``./lora-output-{name}``.
-                    None (default) produces no output files.
+                    True (default) produces no output files.
         """
         if not self.lora_enabled:
             self.enable_lora()
@@ -130,13 +130,18 @@ class LoraModel:
                "labels": [-100 if m == 0 else i for i, m in zip(inds, ms)]}
               for inds, ms in zip(tok["input_ids"], tok["attention_mask"])]
 
-        out_dir = f"./lora-output-{self.name}" if output else "./.lora-tmp"
-        Trainer(model=self.model, args=TrainingArguments(
-            output_dir=out_dir, learning_rate=lr, per_device_train_batch_size=4,
+        output_dir = f"./lora-output-{self.name}" if output else "./temp_output"
+        args=TrainingArguments(
+            output_dir=output_dir, learning_rate=lr, per_device_train_batch_size=4,
             num_train_epochs=epochs, logging_steps=5,
             save_strategy="no" if output is None else "epoch",
             report_to="none",
-        ), train_dataset=dataset, processing_class=self.tokenizer).train()
+        )
+        Trainer(model=self.model, args=args, train_dataset=dataset, processing_class=self.tokenizer).train()
+
+        if not output:
+            import shutil
+            shutil.rmtree("./temp_output")
 
         self.model.config.use_cache = True
 
