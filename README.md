@@ -1,7 +1,7 @@
-# ft-lora
+# lora-easy
 
 <p align="center">
-  <img src="assets/banner.svg" alt="ft-lora — LoRA fine-tuning" width="700">
+  <img src="assets/banner.svg" alt="lora-easy — LoRA fine-tuning" width="700">
 </p>
 
 <p align="center">
@@ -56,7 +56,7 @@ Runs on CUDA, Apple Silicon (MPS), or CPU. The default device in `LoraModel` is
 
 ```python
 import json
-from ft_lora import LoraModel
+from lora_ez import LoraModel
 
 # ShareGPT-format data: [{"messages": [{"role": "user", ...}, {"role": "assistant", ...}]}, ...]
 data = json.loads(open("cat_chat.json").read())

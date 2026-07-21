@@ -8,7 +8,7 @@ from pathlib import Path
 # make the library importable when running from the demo/ folder
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from ft_lora import LoraModel
+from lora_ez import LoraModel
 
 DATA_PATH = Path(__file__).parent / "cat-chat.json"
 
