@@ -76,7 +76,7 @@ Reload a saved adapter later:
 
 ```python
 m = LoraModel("Qwen/Qwen2.5-0.5B-Instruct")
-m.load_lora("./lora-cat")
+m.load("./lora-cat")
 print(m.chat("过来让我抱一下。"))
 ```
 
@@ -89,7 +89,7 @@ print(m.chat("过来让我抱一下。"))
 | `disable_lora()` | Point back to the frozen base model |
 | `train(conversations, epochs, lr)` | Fine-tune on ShareGPT-format data |
 | `chat(prompt, max_tokens)` | Generate a reply through the chat template |
-| `save(path)` / `load_lora(path)` | Persist / restore the adapter |
+| `save(path)` / `load(path)` | Persist / restore the adapter |
 
 ## Demo
 

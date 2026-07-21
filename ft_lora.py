@@ -11,6 +11,8 @@ Requirements:
 
 Use:
 
+    MODEL_ID = ... # model id, e.g. "Qwen/Qwen2.5-0.5B-Instruct"
+
     TEST_PROMPTS = [
         ...
     ]  # list of prompts
@@ -109,7 +111,7 @@ class LoraModel:
     # -- Training -----------------------------------------------------------
 
     def train(self, conversations: list[dict], epochs: int = 30, lr: float = 3e-4,
-              output: bool = True):
+              output: bool = False):
         """Fine-tune with LoRA on ShareGPT-format conversations.
 
         Pipeline: render each convo via chat template -> tokenize with pad+trunc ->
@@ -118,7 +120,7 @@ class LoraModel:
 
         Args:
             output: if set, save training logs/checkpoints to ``./lora-output-{name}``.
-                    True (default) produces no output files.
+                    False (default) produces no output files.
         """
         if not self.lora_enabled:
             self.enable_lora()
@@ -155,6 +157,7 @@ class LoraModel:
         path = f"lora-{self.name}" if path is None else path
         self.model.save_pretrained(path)
         self.tokenizer.save_pretrained(path)
+        print("The adapter is saved in `path`.")
 
     def load(self, path: str | None = None):
         path = f"lora-{self.name}" if path is None else path

@@ -18,7 +18,7 @@ TEST_PROMPTS = [
     "过来让我抱一下。",
 ]
 
-
+model_id = "Qwen/Qwen2.5-0.5B-Instruct"
 data = json.loads(DATA_PATH.read_text())
 
 def train(model_id, data, save=True):
@@ -40,5 +40,4 @@ def train(model_id, data, save=True):
         print(f"  input:  {p}")
         print(f"  output: {m.chat(p)}\n")
 
-
-train("Qwen/Qwen2.5-0.5B-Instruct", data, TEST_PROMPTS)
+train(model_id, data, TEST_PROMPTS)
