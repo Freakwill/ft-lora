@@ -20,4 +20,4 @@ dependencies = [
 Homepage = "https://github.com/Freakwill/lora-easy"
 
 [tool.setuptools]
-py-modules = ["lora_ez"]
+packages = ["lora_ez"]
