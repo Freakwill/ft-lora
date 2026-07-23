@@ -10,9 +10,11 @@ from transformers import AutoModelForCausalLM, AutoTokenizer, Trainer, TrainingA
 class LoraModel:
     """A causal LM with built-in LoRA training & chat, hiding ``from_pretrained``."""
 
-    def __init__(self, model_id: str, name: str = "assistant", device: str = "mps"):
+    def __init__(self, model_id: str, name: str = "assistant", device: str = "mps",
+                 system_prompt: str | None = None):
         self.model_id = model_id
         self.name = name
+        self.system_prompt = system_prompt
         self.tokenizer = AutoTokenizer.from_pretrained(model_id)
         self.tokenizer.pad_token = self.tokenizer.eos_token
         self.base = AutoModelForCausalLM.from_pretrained(model_id, device_map=device, torch_dtype="auto")
@@ -64,14 +66,20 @@ class LoraModel:
             messages, tokenize=False, add_generation_prompt=add_gen,
         )
 
-    def chat(self, prompt: str, history: list | None = None, max_tokens: int = 80) -> str:
+    def chat(self, prompt: str, history: list | None = None, max_tokens: int = 80,
+             system_prompt: str | None = None) -> str:
         """Send a prompt (with optional conversation history) and return the reply.
 
         ``history`` is a list of ``{"role": ..., "content": ...}`` dicts from
         previous turns.  The model sees the full context and can refer back to it.
+        ``system_prompt`` overrides ``self.system_prompt`` for this single turn.
         """
         self.model.eval()
-        messages = list(history or []) + [{"role": "user", "content": prompt}]
+        sp = system_prompt if system_prompt is not None else self.system_prompt
+        messages = list(history or [])
+        if sp and (not messages or messages[0].get("role") != "system"):
+            messages = [{"role": "system", "content": sp}] + messages
+        messages.append({"role": "user", "content": prompt})
         fmt = self._format(messages)
         inp = self.tokenizer(fmt, return_tensors="pt").to(self.model.device)
         with torch.no_grad():
@@ -83,7 +91,7 @@ class LoraModel:
     # -- Chat session (context manager) ------------------------------------
 
     def chat_session(self, save_path: str | None = None, auto_save: bool = False,
-                     max_tokens: int = 2000):
+                     max_tokens: int = 2000, system_prompt: str | None = None):
         """Return a ``ChatSession`` context manager for multi-turn conversations.
 
         Usage::
@@ -95,9 +103,11 @@ class LoraModel:
 
         When the history grows beyond ``max_tokens`` tokens it is automatically
         summarised by the model and replaced with a compact system message.
+        ``system_prompt`` overrides ``self.system_prompt`` for the session.
         """
-        from .session import _ChatSession  # delayed import avoids cycle
-        return _ChatSession(self, save_path, auto_save, max_tokens)
+        from .session import _ChatSession
+        return _ChatSession(self, save_path, auto_save, max_tokens,
+                           system_prompt=system_prompt if system_prompt is not None else self.system_prompt)
 
     # -- Training -----------------------------------------------------------
 

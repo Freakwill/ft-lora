@@ -26,7 +26,8 @@ class _ChatSession:
     """
 
     def __init__(self, model, save_path: str | None = None,
-                 auto_save: bool = False, max_tokens: int = 2000):
+                 auto_save: bool = False, max_tokens: int = 2000,
+                 system_prompt: str | None = None):
         """Multi-turn chat session with persistent history and auto-summarisation.
 
         Parameters
@@ -43,8 +44,11 @@ class _ChatSession:
         max_tokens : int
             Upper bound on total tokenised history before automatic
             summarisation kicks in (default 2000).
+        system_prompt : str or None
+            System-level instructions prepended to every turn.
         """
         self.model = model
+        self.system_prompt = system_prompt
         self.save_path = Path(save_path) if save_path else None
         self.auto_save = auto_save
         self.max_tokens = max_tokens
@@ -69,7 +73,8 @@ class _ChatSession:
         """
         self._maybe_summarize(prompt)
         self.history.append({"role": "user", "content": prompt})
-        reply = self.model.chat(prompt, history=self.history[:-1], **kwargs)
+        reply = self.model.chat(prompt, history=self.history[:-1],
+                                system_prompt=self.system_prompt, **kwargs)
         self.history.append({"role": "assistant", "content": reply})
         return reply
 
@@ -114,7 +119,10 @@ class _ChatSession:
         raw = self.model.tokenizer.decode(out[0], skip_special_tokens=True)
         summary = raw.rpartition("assistant\n")[-1].strip()
         self.history.clear()
-        self.history.append({
-            "role": "system",
-            "content": f"Previous conversation summary: {summary}",
-        })
+        # preserve system prompt if set, merge summary into it
+        if self.system_prompt:
+            self.history.append({"role": "system",
+                                 "content": f"{self.system_prompt}\n\n[Summary of previous turns: {summary}]"})
+        else:
+            self.history.append({"role": "system",
+                                 "content": f"Previous conversation summary: {summary}"})
